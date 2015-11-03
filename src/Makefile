@@ -1,57 +1,85 @@
 include ../config.mk
-CFLAGS+= -g -ggdb
-LDFLAGS+= -g -ggdb
-#CFLAGS+=-DOLDFMT=1
-OBJ=alloc.o cdb.o buffer.o cdb_make.o ls.o ht.o sdb.o sdbn.o lock.o
-OBJ+=json.o json/js0n.o json/json.o json/rangstr.o ns.o
 
-BIN=sdb${EXEXT}
+CFLAGS+= -g -ggdb
+OBJ=cdb.o buffer.o cdb_make.o ls.o ht.o sdb.o num.o base64.o match.o
+OBJ+=json.o ns.o lock.o util.o disk.o query.o array.o fmt.o journal.o
+
+SOBJ=$(subst .o,._o,${OBJ})
+
+BIN=sdb${EXT_EXE}
 
 .PHONY: all static shared clean
 
-all: ${BIN}
+all: ${BIN} sdb_version.h
 	${MAKE} static
 	${MAKE} shared
 
-sdb-version.h:
-	cd .. ; ${MAKE} src/sdb-version.h
+bin: $(BIN)
 
-shared: sdb-version.h
-	${MAKE} libsdb.${SOEXT}
+json.o: json/api.c json/js0n.c json/path.c json/rangstr.c json/indent.c
 
-static: sdb-version.h
+install:
+	$(MAKE) -C .. install
+
+sdb_version.h:
+	cd .. ; ${MAKE} src/sdb_version.h
+
+shared: sdb_version.h
+	${MAKE} libsdb.${SOVER}
+
+static: sdb_version.h
 	${MAKE} libsdb.a
 
 libsdb.a: ${OBJ}
-	@#ar qf libasb.a ${OBJ}
+ifneq ($(SILENT),)
+	@echo AR libsdb.a
+endif
 	rm -f libsdb.a
-	${AR} -r libsdb.a ${OBJ}
+	${AR} q libsdb.a ${OBJ}
 	${RANLIB} libsdb.a
 
-libsdb.${SOEXT}: ${OBJ}
-	${CC} ${CFLAGS} ${LDFLAGS} -o $@ $(subst .o,.c,${OBJ}) -fPIC -shared
+libsdb.${SOVER}: ${SOBJ}
+ifneq ($(EXT_SO),${SOVER})
+	ln -fs libsdb.${SOVER} libsdb.${EXT_SO}
+endif
+ifneq ($(SILENT),)
+	@echo LIB libsdb.${SOVER}
+endif
+	${CC} ${CFLAGS} ${LDFLAGS} $(LDFLAGS_SHARED) -o $@ ${SOBJ}
 
-t:
-	rm -f foo
-	./sdb foo a=3 b=200
-	hexdump -C foo
-	./sdb foo
-	./sdb foo a
+${BIN}: sdb_version.h libsdb.a main.o
+ifneq ($(SILENT),)
+	@echo BIN ${BIN}
+endif
+	${CC} ${CFLAGS} ${LDFLAGS} -o ${BIN} main.o ${OBJ}
 
-tdd test:
-	sh tdd.sh
+mrproper clean:
+	rm -rf ${OBJ} ${SOBJ} main.o libsdb.a a.out ${BIN} sdb.dSYM
+	rm -rf *.d *._d json/*.d json/*._d *.sdb *.db *.${EXT_SO} *.${EXT_SO}.*
 
-xxx:
-	rm -f foo
-	./sdb foo a=3
-	valgrind ./sdb foo a
-	valgrind ./sdb foo a=3 b=4
-	valgrind ./sdb foo a=9 b=2
+# rules #
+.c:
+ifneq ($(SILENT),)
+	@echo LD $<
+endif
+	$(CC) $(LDFLAGS) -c $(CFLAGS) -o $@ $<
 
-main.c:
+S=$
 
-${BIN}: libsdb.a main.o
-	${CC} ${CFLAGS} -o ${BIN} main.o ${OBJ}
+%.o: %.c
+ifneq ($(SILENT),)
+	@echo CC $<
+endif
+	${CC} -c ${CPPFLAGS} ${CFLAGS} ${CFLAGS_SHARED} -o $@ $<
 
-clean:
-	rm -rf ${OBJ} libsdb.a a.out sdb sdb.dSYM *.sdb *.db *.${SOEXT}
+%._o: %.c
+ifneq ($(SILENT),)
+	@echo CC PIC $<
+endif
+	@mv `echo $<|sed -e 's,\.c$S,\.d,g'` $<.tmp 2>/dev/null || true
+	${CC} -c ${CPPFLAGS} ${CFLAGS} ${CFLAGS_SHARED} -o $@ $<
+	@mv `echo $<|sed -e 's,\.c$S,\.d,g'` `echo $<|sed -e 's,\.c$S,\._d,g'` 2>/dev/null || true
+	@mv $<.tmp `echo $<|sed -e 's,\.c$S,\.d,g'` 2>/dev/null ||true
+
+-include ${OBJ:.o=.d}
+-include ${OBJ:.o=._d}

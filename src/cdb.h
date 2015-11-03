@@ -7,40 +7,31 @@
 #include "types.h"
 
 #define KVLSZ 4
+#define CDB_MAX_KEY 0xff
+#define CDB_MAX_VALUE 0xffffff
 
-#if __WIN32__ || __CYGWIN__ || MINGW32
-#define ULLFMT "I64"
-#define USE_MMAN 0
-#else
-#define ULLFMT "ll"
-#define USE_MMAN 1
-#endif
-
-// TODO THIS MUST GTFO!
-int getkvlen(int fd, ut32 *klen, ut32 *vlen);
+/* TODO THIS MUST GTFO! */
+int cdb_getkvlen(int fd, ut32 *klen, ut32 *vlen);
 #define CDB_HASHSTART 5381
 
 struct cdb {
-	char *map; /* 0 if no map is available */
-	int fd;
-	ut32 size; /* initialized if map is nonzero */
-	ut32 loop; /* number of hash slots searched under this key */
-	ut32 khash; /* initialized if loop is nonzero */
-	ut32 kpos; /* initialized if loop is nonzero */
-	ut32 hpos; /* initialized if loop is nonzero */
+	char *map;   /* 0 if no map is available */
+	int fd;      /* filedescriptor */
+	ut32 size;   /* initialized if map is nonzero */
+	ut32 loop;   /* number of hash slots searched under this key */
+	ut32 khash;  /* initialized if loop is nonzero */
+	ut32 kpos;   /* initialized if loop is nonzero */
+	ut32 hpos;   /* initialized if loop is nonzero */
 	ut32 hslots; /* initialized if loop is nonzero */
-	ut32 dpos; /* initialized if cdb_findnext() returns 1 */
-	ut32 dlen; /* initialized if cdb_findnext() returns 1 */
+	ut32 dpos;   /* initialized if cdb_findnext() returns 1 */
+	ut32 dlen;   /* initialized if cdb_findnext() returns 1 */
 };
 
-extern void cdb_free(struct cdb *);
-extern void cdb_init(struct cdb *,int fd);
-
-extern int cdb_read(struct cdb *,char *,unsigned int,ut32);
-
-extern void cdb_findstart(struct cdb *);
-extern int cdb_findnext(struct cdb *,ut32 u, const char *,unsigned int);
-extern int cdb_find(struct cdb *,const char *,unsigned int);
+void cdb_free(struct cdb *);
+int cdb_init(struct cdb *, int fd);
+void cdb_findstart(struct cdb *);
+int cdb_read(struct cdb *, char *, unsigned int, ut32);
+int cdb_findnext(struct cdb *, ut32 u, const char *, ut32);
 
 #define cdb_datapos(c) ((c)->dpos)
 #define cdb_datalen(c) ((c)->dlen)

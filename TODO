@@ -1,17 +1,26 @@
+* do we want to specify the maximum depth of nested namespaces?
+
+BUGS
+----
+* expire time may be affected by timezone and system time change (NOTE)
+* verify return 0/1 everywhere
+
 TODO
 ----
+* Add disk database file checksum to verify if its broken or valid file
+* ht->ls is wrong! dups appear
+* support plain text databases
+* implement mmap for w32
+* implement sdb_ainc/sdb_adec
+* implement io filters for load/save databases (io wrap)
 * support json 2.0 ({foo:"bar"}) <- no need for quotes in name
 * create string pool for a list of sizes 
 	newpool (sizeof (char), 10, 100, 1000);
 * Add api to store serialized in memory
 * Add api for raw bytes
-* support for arrays/lists
-* use stdin if database name is '-' ??
 * Add api and syntax for json_length()
-* Add query api sdb_query ("") - for running command prompts
 * Add comparision stuff
 * Add support for socket file for memcached api
-* incr returns char * in mcsdb and ut64 in sdb api? looks wrong!
 * add api to create db without caching it before
 * remove buffer
 
@@ -27,6 +36,7 @@ Optimization
 ------------
 * remove endian conversions
 * use slices instead of mallocs
+* use strstore
 * accelerate get ops with cached results (const char* instead of strdup)
 * implement udp protocol for memcache
 * rewrite mcsdb in luvit
@@ -38,3 +48,16 @@ BUGS
 * hashtable is not cleaned up when sync
   - must honor expire time entries
 * key and value boundaries are probably not properly handled
+
+StringPool
+----------
+string types:
+  readonly
+  numeric
+  array
+  word
+  string
+
+char *hugestring;
+int hugestring_size;
+{type;}

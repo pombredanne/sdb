@@ -1,23 +1,34 @@
-/* radare - LGPL - Copyright 2007-2012 pancake<nopcode.org> */
+/* sdb - MIT - Copyright 2007-2014 - pancake */
 
 #include <string.h>
 #include "ls.h"
 
-R_API SdbList *ls_new() {
+SDB_API SdbList *ls_new() {
 	SdbList *list = R_NEW (SdbList);
+	if (!list)
+		return NULL;
 	list->head = NULL;
 	list->tail = NULL;
-	list->free = NULL;
+	list->free = free; // HACK
 	list->length = 0;
 	return list;
 }
 
-R_API void ls_delete (SdbList *list, SdbListIter *iter) {
-	if (iter==NULL) {
-		printf ("ls_delete: null iter?\n");
-		return;
+SDB_API void ls_sort(SdbList *list, SdbListComparator cmp) {
+	SdbListIter *it, *it2;
+	for (it = list->head; it && it->data; it = it->n) {
+		for (it2 = it->n; it2 && it2->data; it2 = it2->n) {
+			if (cmp (it->data, it2->data)>0) {
+				void *t = it->data;
+				it->data = it2->data;
+				it2->data = t;
+			}
+		}
 	}
-	list->free = free; // XXX HACK
+}
+
+SDB_API void ls_delete (SdbList *list, SdbListIter *iter) {
+	if (!list || !iter) return;
 	ls_split_iter (list, iter);
 	if (list->free && iter->data) {
 		list->free (iter->data);
@@ -27,63 +38,85 @@ R_API void ls_delete (SdbList *list, SdbListIter *iter) {
 	list->length--;
 }
 
-R_API void ls_split_iter (SdbList *list, SdbListIter *iter) {
+SDB_API void ls_split_iter (SdbList *list, SdbListIter *iter) {
+	if (!list || !iter) return;
 	if (list->head == iter) list->head = iter->n;
 	if (list->tail == iter) list->tail = iter->p;
 	if (iter->p) iter->p->n = iter->n;
 	if (iter->n) iter->n->p = iter->p;
 }
 
-R_API void ls_destroy (SdbList *list) {
+SDB_API void ls_destroy (SdbList *list) {
 	SdbListIter *it;
-	if (list) {
-		it = list->head;
-		while (it) {
-			SdbListIter *next = it->n;
-			ls_delete (list, it);
-			it = next;
-		//	free (it);
-		}
-		list->head = list->tail = NULL;
-		list->length = 0;
+	if (!list) return;
+	it = list->head;
+	while (it) {
+		SdbListIter *next = it->n;
+		ls_delete (list, it);
+		it = next;
 	}
-	//free (list);
+	list->head = list->tail = NULL;
+	list->length = 0;
 }
 
-R_API void ls_free (SdbList *list) {
-	list->free = NULL;
+SDB_API void ls_free (SdbList *list) {
+	if (!list) return;
 	ls_destroy (list);
+	list->free = NULL;
 	free (list);
 }
 
-// XXX: Too slow?
-R_API SdbListIter *ls_append(SdbList *list, void *data) {
-	SdbListIter *new = NULL;
-	if (data) {
-		new = R_NEW (SdbListIter);
-		if (list->tail)
-			list->tail->n = new;
-		new->data = data;
-		new->p = list->tail;
-		new->n = NULL;
-		list->tail = new;
-		if (list->head == NULL)
-			list->head = new;
-		list->length++;
-	}
-	return new;
+SDB_API SdbListIter *ls_append(SdbList *list, void *data) {
+	SdbListIter *it;
+	if (!list)
+		return NULL;
+	it = R_NEW (SdbListIter);
+	if (!it)
+		return NULL;
+	if (list->tail)
+		list->tail->n = it;
+	it->data = data;
+	it->p = list->tail;
+	it->n = NULL;
+	list->tail = it;
+	if (list->head == NULL)
+		list->head = it;
+	list->length++;
+	return it;
 }
 
-R_API SdbListIter *ls_prepend(SdbList *list, void *data) {
-	SdbListIter *new = R_NEW (SdbListIter);
+SDB_API SdbListIter *ls_prepend(SdbList *list, void *data) {
+	SdbListIter *it = R_NEW (SdbListIter);
+	if (!it) return NULL;
 	if (list->head)
-		list->head->p = new;
-	new->data = data;
-	new->n = list->head;
-	new->p = NULL;
-	list->head = new;
+		list->head->p = it;
+	it->data = data;
+	it->n = list->head;
+	it->p = NULL;
+	list->head = it;
 	if (list->tail == NULL)
-		list->tail = new;
+		list->tail = it;
 	list->length++;
-	return new;
+	return it;
+}
+
+SDB_API void *ls_pop(SdbList *list) {
+	void *data = NULL;
+	SdbListIter *iter;
+	if (list){
+		if (list->tail) {
+			iter = list->tail;
+			if (list->head == list->tail) {
+				list->head = list->tail = NULL;
+			} else {
+				list->tail = iter->p;
+				list->tail->n = NULL;
+			}
+			data = iter->data;
+			free (iter);
+			list->length--;
+		}
+		return data;
+	}
+	return NULL;
 }

@@ -1,4 +1,5 @@
-/* Copyleft 2011-2012 - mcsdb (aka memcache-SimpleDB) - pancake<nopcode.org> */
+/* mcsdb - LGPLv3 - Copyright 2011-2014 - pancake */
+
 #include "mcsdb.h"
 
 McSdbClient *mcsdb_client_new (const char *host, const char *port) {
@@ -29,7 +30,7 @@ char *mcsdb_client_decr (McSdbClient *ms, const char *key, ut64 val) {
 	return net_readnl (ms->fd);
 }
 
-void mcsdb_client_set (McSdbClient *ms, const char *key, const char *body, ut64 exptime) {
+void mcsdb_client_set (McSdbClient *ms, const char *key, const char *body, ut64 exptime UNUSED) {
 	net_printf (ms->fd, "set %s 0 0 %d\r\n", key, strlen (body));
 	net_flush (ms->fd);
 	net_printf (ms->fd, "%s\r\n", body);
@@ -37,7 +38,7 @@ void mcsdb_client_set (McSdbClient *ms, const char *key, const char *body, ut64 
 	free (net_readnl (ms->fd));
 }
 
-static int sendcmd (int fd, const char *cmd, const char *key, const char *body, ut64 exptime) {
+static int sendcmd (int fd, const char *cmd UNUSED, const char *key, const char *body, ut64 exptime UNUSED) {
 	int ret;
 	char *res;
 	net_printf (fd, "add %s 0 0 %d\r\n", key, strlen (body));
@@ -93,8 +94,10 @@ char *mcsdb_client_get (McSdbClient *ms, const char *key, ut64 *exptime) {
 	if (slen<1)
 		return NULL;
 	buf = malloc (slen+2);
-	read (ms->fd, buf, slen+2);
-	buf[slen] = 0;
+	if (buf) {
+		int rv = read (ms->fd, buf, slen+2);
+		buf[R_MAX(0,rv-1)] = 0;
+	}
 	free (net_readnl (ms->fd)); // read END
 	return buf;
 }

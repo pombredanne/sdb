@@ -1,4 +1,5 @@
-/* Copyleft 2011-2012 - mcsdb (aka memcache-SimpleDB) - pancake<nopcode.org> */
+/* mcsdb - LGPLv3 - Copyright 2011-2014 - pancake */
+
 #include "mcsdb.h"
 #include <ctype.h>
 #include <sys/resource.h>
@@ -31,19 +32,20 @@ static void handle_get(McSdb *ms, int fd, char *key, int smode) {
 			net_printf (fd, "%s\r\n", s);
 			free (s);
 			n++;
+//break;
 		}
 		if (k) K = k + 1;
 	} while (k);
 	net_printf (fd, "END\r\n"); // no elements found
 }
 
-int protocol_handle (McSdbClient *c, char *buf) {
+int protocol_handle (McSdb *ms, McSdbClient *c, char *buf) {
 	struct rusage ru;
 	int fd, ret, reply, stored = 1;
 	char *b, *p, *q, *cmd = buf, *key = NULL;
 	int flags = 0, bytes = 0;
 	ut64 n = 0;
-	ut32 cmdhash;
+	ut32 cmdhash = 0;
 
 	if (!c || !*buf) { // never happenz
 		//net_printf (fd, "ERROR\r\n");
@@ -82,7 +84,7 @@ int protocol_handle (McSdbClient *c, char *buf) {
 	}
 	strtolower (cmd);
 
-	cmdhash = sdb_hash (cmd, 0);
+	cmdhash = sdb_hash (cmd);
 	switch (cmdhash) {
 	case MCSDB_CMD_FLUSH_ALL:
 		mcsdb_flush (ms);
@@ -100,6 +102,15 @@ int protocol_handle (McSdbClient *c, char *buf) {
 		break;
 	case MCSDB_CMD_GETS:
 		handle_get (ms, fd, key, 1);
+		break;
+	case MCSDB_CMD_TOUCH: /* key exptime [noreply] */
+		if (!key || !p) {
+			net_printf (fd, "ERROR\r\n");
+			return 0;
+		}
+		sscanf (p, "%llu", &n);
+		net_printf (fd, mcsdb_touch (ms, key, n)?
+			"TOUCHED\r\n": "NOT_TOUCHED\r\n");
 		break;
 	case MCSDB_CMD_INCR:
 	case MCSDB_CMD_DECR:

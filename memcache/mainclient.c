@@ -1,4 +1,5 @@
-/* Copyleft 2011-2012 - mcsdb (aka memcache-SimpleDB) - pancake<nopcode.org> */
+/* mcsdb - LGPLv3 - Copyright 2011-2013 - pancake */
+
 #include "mcsdb.h"
 
 int main(int argc, char **argv) {
@@ -16,8 +17,7 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 	for (;;) {
-		fgets (buf, sizeof (buf), stdin);
-		if (feof (stdin))
+		if (fgets (buf, sizeof (buf), stdin) == NULL || feof (stdin))
 			break;
 		buf[strlen (buf)-1] = 0;
 		if (buf[0]=='+') {

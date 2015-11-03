@@ -1,4 +1,5 @@
-/* Copyleft 2011-2012 - mcsdb (aka memcache-SimpleDB) - pancake<nopcode.org> */
+/* mcsdb - LGPLv3 - Copyright 2011-2014 - pancake */
+
 #include "types.h"
 #include "mcsdb.h"
 #include <netinet/in.h>
@@ -7,10 +8,11 @@
 #include <netdb.h>
 #include <signal.h>
 #include <stdio.h>
+#include <sys/socket.h>
 #include <stdarg.h>
 
 static char netbuf[MCSDB_MAX_BUFFER];
-static int netbuflen = 0;
+static size_t netbuflen = 0;
 
 
 char *net_readnl(int fd) {
@@ -38,25 +40,33 @@ int net_flush(int fd) {
 	return n;
 }
 
-int net_printf (int fd, char *fmt, ...) {
+int net_printf (int fd, const char *fmt, ...) {
 	int n;
 	char buf[MCSDB_MAX_BUFFER];
 	va_list ap;
 	va_start (ap, fmt);
 	n = vsnprintf (buf, sizeof (buf)-1, fmt, ap);
+	va_end (ap);
+	if (n < 0)
+		return 0;
 	if (netbuflen+n>sizeof (netbuf))
 		net_flush (fd);
 	strcpy (netbuf+netbuflen, buf);
-	va_end (ap);
 	netbuflen += n;
 	return n;
 }
 
 void net_sockopt (int fd) {
+#if __linux__
 	struct linger ling = {0, 0};
+#endif
 	int flags = 1;
-        setsockopt (fd, SOL_SOCKET, SO_REUSEADDR, (void *)&flags, sizeof (flags));
-	setsockopt (fd, SOL_SOCKET, SO_LINGER, (void *)&ling, sizeof (ling));
+        (void)setsockopt (fd, SOL_SOCKET, SO_REUSEADDR,
+		(void *)&flags, sizeof (flags));
+#if __linux__
+	(void)setsockopt (fd, SOL_SOCKET, SO_LINGER,
+		(void *)&ling, sizeof (ling));
+#endif
 }
 
 int net_listen (int port) {
@@ -75,7 +85,7 @@ int net_listen (int port) {
                 close (fd);
                 return -1;
         }
-        fcntl (fd, F_SETFL, O_NONBLOCK, 0); // //!block);
+        (void)fcntl (fd, F_SETFL, O_NONBLOCK, 0);
         signal (SIGPIPE, SIG_IGN);
         if (listen (fd, 1) != -1)
 		return fd;

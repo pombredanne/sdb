@@ -2,7 +2,9 @@
 #define _INCLUDE_SDB_MCSDB_H_
 
 #include "sdb.h"
+#if !__SDB_WINDOWS__
 #include <poll.h>
+#endif
 
 /* "mcsdb.sdb" */
 #define MCSDB_FILE NULL
@@ -51,13 +53,14 @@ typedef struct {
 	ut8 buf[NETBUFSZ];
 } NetClient;
 
-extern McSdb *ms;
+int protocol_handle(McSdb *, McSdbClient *c, char *buf);
 
 McSdb *mcsdb_new(const char *file);
 void mcsdb_free(McSdb *ms);
 void mcsdb_flush(McSdb *ms);
 int mcsdb_set(McSdb *ms, const char *key, const char *value, ut64 exptime, ut32 cas);
 int mcsdb_cas(McSdb *ms, const char *key, const char *value, ut64 exptime, ut32 cas);
+int mcsdb_touch(McSdb *ms, const char *key, ut64 exptime);
 char *mcsdb_get(McSdb *ms, const char *key, ut64 *exptime, ut32 *cas);
 char *mcsdb_incr(McSdb *ms, const char *key, ut64 val);
 char *mcsdb_decr(McSdb *ms, const char *key, ut64 val);
@@ -71,7 +74,7 @@ int net_connect(const char *host, const char *port);
 int net_listen(int port);
 int net_close(int s);
 int net_flush(int fd);
-int net_printf(int fd, char *fmt, ...);
+int net_printf(int fd, const char *fmt, ...);
 char *net_readnl(int fd);
 
 /* client */

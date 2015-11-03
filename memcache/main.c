@@ -1,10 +1,17 @@
-/* Copyleft 2011-2012 - mcsdb (aka memcache-SimpleDB) - pancake<nopcode.org> */
-#include <signal.h>
-#include <sys/socket.h>
-#include "mcsdb.h"
+/* mcsdb - LGPLv3 - Copyright 2011-2015 - pancake */
 
-McSdb *ms = NULL;
-int protocol_handle(McSdbClient *c, char *buf);
+#include <signal.h>
+#include "mcsdb.h"
+#include "../src/types.h"
+#include <fcntl.h>
+#if __SDB_WINDOWS__
+#include <windows.h>
+#else
+#include <netinet/in.h>
+#include <sys/socket.h>
+#endif
+
+static McSdb *ms = NULL;
 
 static McSdbClient *mcsdb_client_new_fd(int fd) {
 	McSdbClient *c = R_NEW (McSdbClient);
@@ -26,29 +33,29 @@ static int fds_add(int fd) {
 	return 1;
 }
 
-static void sigint() {
+static void sigint(int sig UNUSED) {
 	signal (SIGINT, SIG_IGN);
-	fprintf (stderr, "gets %lld\n", ms->gets);
-	fprintf (stderr, "sets %lld\n", ms->sets);
-	fprintf (stderr, "hits %lld\n", ms->hits);
-	fprintf (stderr, "miss %lld\n", ms->misses);
-	fprintf (stderr, "read %lld\n", ms->bread);
-	fprintf (stderr, "writ %lld\n", ms->bwrite);
-	fprintf (stderr, "nfds %d\n", ms->nfds);
-	fprintf (stderr, "SIGINT handled.\n");
+	eprintf ("gets %lld\n", ms->gets);
+	eprintf ("sets %lld\n", ms->sets);
+	eprintf ("hits %lld\n", ms->hits);
+	eprintf ("miss %lld\n", ms->misses);
+	eprintf ("read %lld\n", ms->bread);
+	eprintf ("writ %lld\n", ms->bwrite);
+	eprintf ("nfds %d\n", ms->nfds);
+	eprintf ("SIGINT handled.\n");
 	mcsdb_free (ms);
 	exit (0);
 }
 
-static void setup_signals() {
+static void setup_signals(void) {
 	signal (SIGINT, sigint);
 }
 
-static void main_version() {
+static void main_version(void) {
 	printf ("mcsdbd v"MCSDB_VERSION"\n");
 }
 
-static void main_help(const char *arg) {
+static void main_help(const char *arg UNUSED) {
 	printf ("mcsdbd [-hv] [-p port] [sdbfile]\n");
 }
 
@@ -59,7 +66,7 @@ static int mcsdb_client_accept(int fd) {
 			ms->fds[0].revents = 0;
 			return 1;
 		}
-		fprintf (stderr, "cannot accept more clients\n");
+		eprintf ("cannot accept more clients\n");
 		net_close (cfd);
 	}
 	return 0;
@@ -83,38 +90,25 @@ static int mcsdb_client_state(McSdbClient *c) {
 	}
 	switch (c->mode) {
 	case 0: // read until newline
-		rlen = MCSDB_MAX_BUFFER - c->idx;
-		if (c->next) {
-			// never happens
-			r = 0;
-		} else {
-			r = read (c->fd, c->buf+c->idx, rlen);
-		}
+		rlen = MCSDB_MAX_BUFFER-1 - c->idx;
+		r = c->next? 0: read (c->fd, c->buf+c->idx, rlen);
 		if (r<0) {
-			printf ("ignored error\n");
+			eprintf ("ignored error\n");
 			return 1;
-			//return 0;
 		}
-//		if (r>0) {
-			c->buf[c->idx+r] = 0;
-			//printf ("---- (%s)\n", c->buf+c->idx);
-			if ((p = strchr (c->buf+c->idx, '\n'))) {
-				//char *rest = p+1;
-				*p--=0;
-				if (p>c->buf && *p=='\r')
-					*p = 0;
-				int restlen = (int)(size_t)(p-c->buf); //(int)r-(rest-c->buf);
-				c->next = restlen+2; //(c->idx-restlen);
-				//printf ("MUST REREAD (%s) %d %d\n", c->buf, c->idx, c->next);
-				//printf (" - --- next (%s) %d (len=%d)\n", c->buf+c->next, c->idx, c->idx);
-				c->idx += r;
-				return 1;
-			}
-			ms->bread += r;
+		c->buf[c->idx+r] = 0;
+		if ((p = strchr (c->buf+c->idx, '\n'))) {
+			*p--=0;
+			if (p>c->buf && *p=='\r')
+				*p = 0;
+			const int restlen = (int)(size_t)(p-c->buf);
+			c->next = restlen+2;
 			c->idx += r;
-//		}
+			return 1;
+		}
+		ms->bread += r;
+		c->idx += r;
 		return 1;
-		// IGNORED return 0;
 	case 1: // read N bytes
 		if (c->idx>c->len)
 			c->idx = 0;
@@ -122,16 +116,21 @@ static int mcsdb_client_state(McSdbClient *c) {
 		rlen = c->len-c->idx;
 		if (rlen>0 && c->len>0) {
 			r = read (c->fd, c->buf+c->idx, rlen);
-			if (r<1) {
+			if (r==-1) {
+			// 	perror ("read");
+			}
+			if (r != rlen) {
+				c->buf[sizeof (c->buf)-1] = 0;
 				c->idx = 0;
 				// shift internal buffer for bulk writes
 				if (0 == r) {
-					strcpy (c->buf, c->buf+c->len);
+					strncpy (c->buf, c->buf+c->len,
+						sizeof (c->buf)-1);
 					c->len = strlen (c->buf);
 					return 1;
 				}
 				return 0;
-			}
+			}// else eprintf ("Invalid %d read wtf\n", r);
 		} 
 		c->idx += r;
 		c->buf[c->idx+1] = 0;
@@ -140,8 +139,9 @@ static int mcsdb_client_state(McSdbClient *c) {
 			return 1;
 		}
 		break;
-	case 2: // write : not yet used
-		write (c->fd, c->buf+c->idx, c->len-c->idx);
+	case 2:
+		r = write (c->fd, c->buf+c->idx, c->len-c->idx);
+		if (r!=(c->len-c->idx)) return 1;
 		break;
 	}
 	return 0;
@@ -171,8 +171,6 @@ static int fds_del (McSdbClient *c) {
 	return 1;
 }
 
-#include <netinet/in.h>
-#include <fcntl.h>
 static int udp_listen (int port) {
 	struct sockaddr_in si_me;
 	int s;
@@ -192,7 +190,7 @@ static int udp_listen (int port) {
 	return s;
 }
 
-static int udp_parse(McSdbClient *c, int fd) {
+static int udp_parse(McSdbClient *c UNUSED, int fd) {
 #pragma pack(2)
 #define ut16 unsigned short
 struct udphdr_t {
@@ -204,11 +202,9 @@ struct udphdr_t {
 #pragma pack()
 struct udphdr_t h;
 	char buf[32768];
-	int ret = read (fd, buf, 32768);
-
-	if (ret<1)
-		return 0;
-	buf[ret] = 0;
+	int ret = read (fd, buf, sizeof (buf)-1);
+	if (ret<1) return 0;
+	buf[ret-1] = 0;
 	memcpy (&h, buf, 8);
 #if 0
 0-1 Request ID
@@ -217,19 +213,30 @@ struct udphdr_t h;
 6-7 Reserved for future use; must be 0
 #endif
 	//printf ("UDP (%s)\n", buf+8); // TODO
-	if (!memcmp(buf+8, "set ", 4)) {
-		char *p = strchr (buf+12, ' ');
+	if (!memcmp (buf+8, "set ", 4)) {
+		int a, b, l = 0;
+		char *n, *p = strchr (buf+12, ' ');
 		if (p) {
-			int a,b,l;
-			char *n = strchr (p, '\n');
-			*p=0;
-			*n=0;
-			sscanf (p+1, "%d %d %d", &a, &b, &l);
-			n++;
-			n[l] =0 ;
-		//	printf ("KEY %s\n", buf+12);
-		//	printf ("SET %s\n", n);
-			mcsdb_set (ms, buf+12, n, 0, 0);
+			n = strchr (p, '\n');
+			if (n != p) {
+				*p = 0;
+				if (n) *n++ = 0;
+				sscanf (p+1, "%d %d %d", &a, &b, &l);
+#if 1
+				if (n) {
+					int nlen = sizeof (buf)-1;
+					int left = nlen - (size_t)(n-p);
+					if (l>=0 && l<left)
+						n[l] = 0;
+					else buf[sizeof (buf)-1] = 0;
+				}
+#else
+				if (n) n[l] = 0;
+#endif
+				//	printf ("KEY %s\n", buf+12);
+				//	printf ("SET %s\n", n);
+				mcsdb_set (ms, buf+12, n, 0, 0);
+			}
 		}
 	}
 #if 0
@@ -281,9 +288,7 @@ static int net_loop(int port) {
 			c = ms->msc[i];
 			do {
 				ret = mcsdb_client_state (c);
-//printf ("BOING next=%d idx=%d (%s)\n", c->next, c->idx, c->buf+c->idx);
-//printf (".......................................... RET = %d\n", ret);
-				int ph = protocol_handle (c, c->buf); //+c->next);
+				int ph = protocol_handle (ms, c, c->buf);
 				switch (ph) {
 				case 1:
 					break;
@@ -326,7 +331,7 @@ int main(int argc, char **argv) {
 		}
 	}
 	if (port<1) {
-		fprintf (stderr, "Invalid port %d\n", port);
+		eprintf ("Invalid port %d\n", port);
 		return 1;
 	}
 	if (optind < argc)

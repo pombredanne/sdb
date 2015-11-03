@@ -12,27 +12,40 @@ CFLAGS+= -g -ggdb
 all: ${BIN} ${CBIN} libmcsdb.a
 
 ${LIBA}: ${COBJS}
-	ar -r ${LIBA} ${COBJS}
-	ranlib ${LIBA}
+ifneq ($(SILENT),)
+	@echo AR ${LIBA}
+endif
+	${AR} -r ${LIBA} ${COBJS}
+	${RANLIB} ${LIBA}
+
+%.o: %.c
+ifneq ($(SILENT),)
+	@echo CC $<
+endif
+	${CC} -c ${CPPFLAGS} ${CFLAGS} ${CFLAGS_SHARED} -o $@ $<
 
 ${CBIN}: ${COBJS} mainclient.o
-	${CC} mainclient.o ${COBJS} ${LIBS} -o ${CBIN}
+ifneq ($(SILENT),)
+	@echo BIN ${CBIN}
+endif
+	${CC} mainclient.o ${COBJS} ${LDFLAGS} -o ${CBIN} ${LIBS}
 
 ${OBJS} mainclient.o: cmds.h
 
 ${BIN}: ${OBJS}
+ifneq ($(SILENT),)
+	@echo BIN ${BIN}
+endif
 	${CC} -o ${BIN} ${OBJS} ${LDFLAGS} ${LIBS}
 
 cmds.h: cmds.o
-	${CC} -o cmds cmds.o ${CFLAGS} ${LDFLAGS} ${LIBS}
+	${HOST_CC} -o cmds ../src/util.c cmds.c ${CPPFLAGS} -I../src ${HOST_CFLAGS} ${LDFLAGS}
 	./cmds > cmds.h
 
 clean:
-	rm -f *.sdb
-	rm -f ${LIBA}
-	rm -f ${COBJS} ${CBIN} mainclient.o
-	rm -f ${OBJS} ${BIN}
-	rm -f cmds.h cmds cmds.o
+	rm -rf *.dSYM
+	rm -f *.sdb ${LIBA} ${COBJS} ${CBIN} mainclient.o
+	rm -f ${OBJS} ${BIN}cmds.h cmds cmds.o
 
 test:
 	./mcsdbd &
